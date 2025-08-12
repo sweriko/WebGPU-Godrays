@@ -313,6 +313,7 @@ function setupGUI() {
   gui.domElement.style.top = '0px';
   gui.domElement.style.right = '0px';
   gui.domElement.style.zIndex = '1000';
+  gui.domElement.style.paddingBottom = '25px';
   
   if (!volumetricSystem?.uniforms || !volumetricSystem.spotLight) return;
   
@@ -338,6 +339,24 @@ function setupGUI() {
   
   godrayFolder.open();
   
+  // Add model source hyperlink to bottom right of GUI
+  const linkElement = document.createElement('div');
+  linkElement.style.position = 'absolute';
+  linkElement.style.bottom = '8px';
+  linkElement.style.right = '8px';
+  linkElement.style.fontSize = '10px';
+  linkElement.innerHTML = '<a href="https://fab.com/s/06173ad52aa7" target="_blank" style="color: #4a9eff; text-decoration: underline;">3D model source</a>';
+  gui.domElement.appendChild(linkElement);
+  
+  // Toggle GUI visibility with 'P' key
+  let guiVisible = true;
+  document.addEventListener('keydown', (event) => {
+    if (event.code === 'KeyP') {
+      guiVisible = !guiVisible;
+      gui.domElement.style.display = guiVisible ? 'block' : 'none';
+    }
+  });
+
   renderer.domElement.addEventListener('click', () => {
     if (!gui.domElement.contains(event?.target as Node)) {
       renderer.domElement.requestPointerLock();
