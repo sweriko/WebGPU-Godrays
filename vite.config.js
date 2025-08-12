@@ -1,4 +1,6 @@
 import { defineConfig } from 'vite'
+import { copyFileSync, existsSync } from 'fs'
+import { resolve } from 'path'
 
 export default defineConfig({
   root: '.',
@@ -19,4 +21,16 @@ export default defineConfig({
     ],
   },
   assetsInclude: ['**/*.gltf', '**/*.glb', '**/*.fbx', '**/*.obj', '**/*.wasm'],
+  plugins: [
+    {
+      name: 'copy-glb',
+      writeBundle() {
+        const src = resolve('cathedral.glb')
+        const dest = resolve('dist/cathedral.glb')
+        if (existsSync(src)) {
+          copyFileSync(src, dest)
+        }
+      }
+    }
+  ]
 })
