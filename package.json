@@ -13,11 +13,11 @@
     "three": "^0.178.0",
     "@dimforge/rapier3d-compat": "^0.18.0",
     "lil-gui": "^0.20.0",
-    "stats.js": "^0.17.4"
+    "stats.js": "^0.17.0"
   },
   "devDependencies": {
     "@types/three": "0.178.0",
-    "@types/stats.js": "0.17.4",
+    "@types/stats.js": "0.17.0",
     "typescript": "5.8.3",
     "vite": "^7.0.6"
   },
