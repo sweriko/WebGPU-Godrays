@@ -15,7 +15,7 @@ const CONFIG = {
   jumpVelocity: 20,
   cathedral: {
     scale: 5.0,
-    modelPath: '../textures/cathedral.glb'
+    modelPath: './cathedral.glb'
   },
   lighting: {
     spotIntensity: 280,
