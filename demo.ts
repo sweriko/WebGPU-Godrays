@@ -4,6 +4,7 @@ import Stats from 'stats.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { FPSController, createGround, setupLights } from './world.js';
 import { setupVolumetricLighting, animateVolumetricLights, VolumetricLightingSystem } from './volumetric-lighting.js';
+import { PixelArtRenderer } from './pixel-art.js';
 // @ts-ignore
 import RAPIER from '@dimforge/rapier3d-compat';
 
@@ -66,6 +67,10 @@ let fpsController: FPSController;
 let cathedralGroup: THREE.Group | null = null;
 let volumetricSystem: VolumetricLightingSystem | null = null;
 let lastTime = 0;
+let accumulator = 0;
+const fixedStep = 1 / 60;
+const maxAccum = 0.25;
+let pixelArt: PixelArtRenderer | null = null;
 
 async function init() {
   await renderer.init();
@@ -77,6 +82,7 @@ async function init() {
   
   await loadCathedral();
   initVolumetricLighting();
+  initPixelArt();
   
   window.addEventListener('resize', onWindowResize);
   setupGUI();
@@ -85,7 +91,7 @@ async function init() {
 
 function initPhysics() {
   physics = {
-    world: new RAPIER.World({ x: 0, y: -9.81, z: 0 }),
+    world: new RAPIER.World({ x: 0, y: -33.2, z: 0 }),
     rigidBodies: new Map()
   };
 }
@@ -103,19 +109,32 @@ function setupScene() {
 }
 
 function setupController() {
-  fpsController = new FPSController(camera, physics, renderer.domElement);
-  const startPos = CONFIG.cameraStart;
-  
-  fpsController.position.set(startPos.x, startPos.y, startPos.z);
-  fpsController.rigidBody.setNextKinematicTranslation(startPos);
-  fpsController.moveSpeed = CONFIG.moveSpeed;
-  fpsController.jumpVelocity = CONFIG.jumpVelocity;
-  fpsController.gravityForce = 30.0;
-  fpsController.yawObject.rotation.y = Math.PI;
-  fpsController.camera.position.y = 3.0;
-  
-  scene.add(fpsController.object);
-  fpsController.setScene(scene);
+  // Spawn slightly above origin to ensure inside the cathedral
+  const start = { x: 0, y: 8.0, z: 0 };
+  fpsController = new FPSController(physics, camera as any, renderer.domElement, {
+    moveSpeed: 8.4,
+    sprintSpeed: 24.5,
+    jumpSpeed: 19.9,
+    eyeHeight: 2.6,
+    capsuleRadius: 0.35,
+    capsuleHeight: 1.8,
+    mouseSensitivity: 0.003,
+    rotationSmoothingTime: 0.0,
+    invertY: false,
+    flyModeInitially: false,
+    getGroundHeight: () => 0.1
+  });
+  // Set initial transform
+  fpsController.body.setTranslation({ x: start.x, y: start.y, z: start.z }, true);
+  camera.position.set(start.x, start.y, start.z);
+}
+
+function initPixelArt() {
+  pixelArt = new PixelArtRenderer(renderer, camera, {
+    virtualHeight: 180,
+    anchorDistance: 10,
+    enabled: true
+  });
 }
 
 async function loadCathedral() {
@@ -315,6 +334,57 @@ function setupGUI() {
   gui.domElement.style.zIndex = '1000';
   gui.domElement.style.paddingBottom = '25px';
   
+  // Controller folder
+  if (fpsController) {
+    const ctrlParams = {
+      moveSpeed: fpsController.moveSpeed,
+      sprintSpeed: fpsController.sprintSpeed,
+      jumpSpeed: (fpsController as any).setJumpSpeed ? (fpsController as any)['jumpSpeed'] ?? 19.9 : 19.9,
+      eyeHeight: (fpsController as any).getEyeHeight ? (fpsController as any).getEyeHeight() : 1.6,
+      mouseSensitivity: (fpsController as any).getMouseSensitivity ? (fpsController as any).getMouseSensitivity() : 0.003,
+      smoothingTime: (fpsController as any).getRotationSmoothingTime ? (fpsController as any).getRotationSmoothingTime() : 0,
+      invertY: false,
+      flyMode: (fpsController as any).isFlyModeEnabled ? (fpsController as any).isFlyModeEnabled() : false,
+      rayExtra: (fpsController as any).getGroundRayExtraDistance ? (fpsController as any).getGroundRayExtraDistance() : 0.2,
+      groundedTolerance: (fpsController as any).getGroundedTolerance ? (fpsController as any).getGroundedTolerance() : 0.08,
+      debugCapsule: false,
+      toggleFly: () => (fpsController as any).setFlyMode(!(fpsController as any).isFlyModeEnabled?.())
+    };
+    const fCtrl = gui.addFolder('Controller');
+    fCtrl.add(ctrlParams, 'debugCapsule').name('Show Capsule').onChange((v: boolean) => (fpsController as any).enableDebugMesh(scene, v));
+    fCtrl.add(ctrlParams, 'moveSpeed', 1, 40, 0.1).onChange((v: number) => (fpsController as any).setMoveSpeed(v));
+    fCtrl.add(ctrlParams, 'sprintSpeed', 1, 60, 0.1).onChange((v: number) => (fpsController as any).setSprintSpeed(v));
+    fCtrl.add(ctrlParams, 'jumpSpeed', 1, 40, 0.1).onChange((v: number) => (fpsController as any).setJumpSpeed(v));
+    fCtrl.add(ctrlParams, 'eyeHeight', 0.4, 2.6, 0.01).onChange((v: number) => (fpsController as any).setEyeHeight(v));
+    fCtrl.add(ctrlParams, 'mouseSensitivity', 0.0005, 0.01, 0.0001).onChange((v: number) => (fpsController as any).setMouseSensitivity(v));
+    fCtrl.add(ctrlParams, 'smoothingTime', 0, 0.5, 0.005).onChange((v: number) => (fpsController as any).setRotationSmoothingTime(v));
+    fCtrl.add(ctrlParams, 'invertY').onChange((v: boolean) => (fpsController as any).setInvertY(v));
+    fCtrl.add(ctrlParams, 'rayExtra', 0, 0.6, 0.01).name('Ground Ray Extra').onChange((v: number) => (fpsController as any).setGroundRayExtraDistance(v));
+    fCtrl.add(ctrlParams, 'groundedTolerance', 0.01, 0.3, 0.005).name('Ground Tolerance').onChange((v: number) => (fpsController as any).setGroundedTolerance(v));
+    fCtrl.add(ctrlParams, 'toggleFly').name('Toggle Fly (F)');
+  }
+
+  // Physics folder: gravity controls
+  if (physics?.world) {
+    const g = physics.world.gravity;
+    const grav = { x: g.x, y: g.y, z: g.z, bodyScale: 1 };
+    const fPhys = gui.addFolder('Physics');
+    fPhys.add(grav, 'y', -50, 0, 0.1).name('Gravity Y').onChange((v: number) => {
+      physics.world.gravity = { x: grav.x, y: v, z: grav.z } as any;
+    });
+    fPhys.add(grav, 'x', -20, 20, 0.1).name('Gravity X').onChange((v: number) => {
+      physics.world.gravity = { x: v, y: grav.y, z: grav.z } as any;
+    });
+    fPhys.add(grav, 'z', -20, 20, 0.1).name('Gravity Z').onChange((v: number) => {
+      physics.world.gravity = { x: grav.x, y: grav.y, z: v } as any;
+    });
+    if (fpsController) {
+      fPhys.add(grav, 'bodyScale', 0, 2, 0.01).name('Player Gravity Scale').onChange((v: number) => {
+        (fpsController as any).setBodyGravityScale(v);
+      });
+    }
+  }
+
   if (!volumetricSystem?.uniforms || !volumetricSystem.spotLight) return;
   
   const { uniforms, spotLight } = volumetricSystem;
@@ -339,6 +409,23 @@ function setupGUI() {
   
   godrayFolder.open();
   
+  if (pixelArt) {
+    const pixelFolder = gui.addFolder('Pixel Art');
+    const pixelSettings = {
+      enabled: true,
+      virtualHeight: pixelArt['options'].virtualHeight
+    };
+    pixelFolder.add(pixelSettings, 'enabled').name('Enable').onChange((v: boolean) => {
+      pixelArt?.setEnabled(v);
+    });
+    pixelFolder.add(pixelSettings, 'virtualHeight', 90, 360, 1).name('Virtual Height').onChange((v: number) => {
+      if (!pixelArt) return;
+      pixelArt['options'].virtualHeight = Math.floor(v);
+      pixelArt.updateVirtualResolution();
+    });
+    pixelFolder.open();
+  }
+
   // Add model source hyperlink to bottom right of GUI
   const linkElement = document.createElement('div');
   linkElement.style.position = 'absolute';
@@ -357,8 +444,8 @@ function setupGUI() {
     }
   });
 
-  renderer.domElement.addEventListener('click', () => {
-    if (!gui.domElement.contains(event?.target as Node)) {
+  renderer.domElement.addEventListener('click', (ev) => {
+    if (!(gui.domElement as HTMLElement).contains(ev.target as Node)) {
       renderer.domElement.requestPointerLock();
     }
   });
@@ -371,16 +458,24 @@ function animate(time: number) {
   
   const deltaTime = (time - lastTime) / 1000;
   lastTime = time;
-
-  physics.world.step();
-  fpsController.update(deltaTime);
+  accumulator += deltaTime;
+  if (accumulator > maxAccum) accumulator = maxAccum;
+  while (accumulator >= fixedStep) {
+    fpsController.updateBeforePhysics(fixedStep);
+    physics.world.step();
+    fpsController.updateAfterPhysics();
+    accumulator -= fixedStep;
+  }
   
+  if (pixelArt) pixelArt.preRender();
+
   if (volumetricSystem) {
     animateVolumetricLights(volumetricSystem);
     volumetricSystem.postProcessing?.render();
   } else {
     renderer.render(scene, camera);
   }
+  if (pixelArt) pixelArt.postRender();
   
   stats.end();
   stats1.end();
@@ -391,7 +486,11 @@ function animate(time: number) {
 function onWindowResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  if (pixelArt) {
+    pixelArt.onResize();
+  } else {
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  }
 }
 
 init();
